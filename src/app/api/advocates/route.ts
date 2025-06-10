@@ -1,4 +1,4 @@
-import { asc, count, ilike, or } from "drizzle-orm";
+import { asc, count, ilike, or, sql } from "drizzle-orm";
 import db from "../../../db";
 import { advocates } from "../../../db/schema";
 
@@ -14,6 +14,9 @@ export async function GET(request: Request) {
         ilike(advocates.lastName, `%${query}%`),
         ilike(advocates.city, `%${query}%`),
         ilike(advocates.degree, `%${query}%`),
+
+        // Search in JSONB array - converts JSONB to text and searches
+        sql`${advocates.specialties}::text ILIKE ${`%${query}%`}`,
       )
     : undefined;
 

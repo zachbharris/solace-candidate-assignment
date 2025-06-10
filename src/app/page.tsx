@@ -1,7 +1,7 @@
 "use client";
 
 import { debounce } from "lodash";
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { DataTable } from "@/components/ui/data-table";
 import { columns, type Advocate } from "./columns";
 import { Input } from "@/components/ui/input";
@@ -35,21 +35,20 @@ export default function Home() {
     defaultValue: "",
   });
 
-  const { data, isPending, isError, error, isFetching, isPlaceholderData } =
-    useQuery<AdvocatesQuery>({
-      queryKey: ["advocates", page, searchQuery],
-      queryFn: async () => {
-        const params = new URLSearchParams({
-          page: page.toString(),
-          ...(searchQuery && { query: searchQuery }),
-        });
+  const { data } = useQuery<AdvocatesQuery>({
+    queryKey: ["advocates", page, searchQuery],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        page: page.toString(),
+        ...(searchQuery && { query: searchQuery }),
+      });
 
-        return fetch(`/api/advocates?${params.toString()}`).then((response) =>
-          response.json(),
-        );
-      },
-      placeholderData: keepPreviousData,
-    });
+      return fetch(`/api/advocates?${params.toString()}`).then((response) =>
+        response.json(),
+      );
+    },
+    placeholderData: keepPreviousData,
+  });
 
   const advocates: AdvocatesQuery["data"] =
     data?.data || ([] as AdvocatesQuery["data"]);
@@ -123,9 +122,8 @@ export default function Home() {
         </div>
       </div>
 
-      {isFetching && <p className="text-sm text-gray-500">Searching...</p>}
-
       <DataTable columns={columns} data={advocates} />
+
       <Pagination>
         <PaginationContent>
           <PaginationItem>
