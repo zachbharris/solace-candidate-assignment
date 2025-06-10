@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { debounce } from "lodash";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { DataTable } from "@/components/ui/data-table";
 import { columns, type Advocate } from "./columns";
 import { Input } from "@/components/ui/input";
@@ -61,18 +62,47 @@ export default function Home() {
     hasPreviousPage: false,
   };
 
+  // local state to handle immediate input updates
+  const [inputValue, setInputValue] = useState(searchQuery);
+
+  // sync input value with searchQuery when searchQuery changes from URL
+  useEffect(() => {
+    setInputValue(searchQuery);
+  }, [searchQuery]);
+
+  // Create debounced function with useCallback to avoid recreating it
+  const debouncedSearchQuery = useCallback(
+    debounce((value: string) => {
+      setSearchQuery(value);
+      setPage(1);
+    }, 500),
+    [], // Empty dependency array since setSearchQuery and setPage should be stable
+  );
+
+  // Cleanup debounced function on unmount
+  useEffect(() => {
+    return () => {
+      debouncedSearchQuery.cancel();
+    };
+  }, [debouncedSearchQuery]);
+
   const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const searchTerm = e.target.value.toLowerCase();
+    const searchTerm = e.target.value;
 
-    setSearchQuery(searchTerm);
+    // update local input value immediately
+    setInputValue(searchTerm);
 
-    // we want to reset the offset when handling a new query
-    // otherwise, the query might return no data since an offset could be applied
-    if (page > 1) setPage(1);
+    // debounce the search query update
+    debouncedSearchQuery(searchTerm);
   };
 
   const onClick = () => {
+    debouncedSearchQuery.cancel(); // cancel any pending debounced calls
+
+    // reset both local and url state
+    setInputValue("");
     setSearchQuery("");
+    setPage(1);
   };
 
   return (
@@ -84,10 +114,16 @@ export default function Home() {
           Searching for: <span id="search-term">{searchQuery}</span>
         </p>
         <div className="flex flex-row gap-4">
-          <Input value={searchQuery} onChange={onChange} />
+          <Input
+            value={inputValue}
+            onChange={onChange}
+            placeholder="Search advocates..."
+          />
           <Button onClick={onClick}>Reset Search</Button>
         </div>
       </div>
+
+      {isFetching && <p className="text-sm text-gray-500">Searching...</p>}
 
       <DataTable columns={columns} data={advocates} />
       <Pagination>
