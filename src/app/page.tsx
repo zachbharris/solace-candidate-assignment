@@ -1,91 +1,159 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { debounce } from "lodash";
+import { useEffect, useState, useCallback } from "react";
+import { DataTable } from "@/components/ui/data-table";
+import { columns, type Advocate } from "./columns";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
+import { parseAsInteger, useQueryState } from "nuqs";
+
+type AdvocatesQuery = {
+  data: Advocate[];
+  pagination: {
+    currentPage: number;
+    pageSize: number;
+    totalPages: number;
+    totalCount: number;
+    hasNextPage: boolean;
+    hasPreviousPage: boolean;
+  };
+};
 
 export default function Home() {
-  const [advocates, setAdvocates] = useState([]);
-  const [filteredAdvocates, setFilteredAdvocates] = useState([]);
+  // handle tracking our current page in search parameters
+  const [page, setPage] = useQueryState("page", parseAsInteger.withDefault(1));
+  const [searchQuery, setSearchQuery] = useQueryState("query", {
+    defaultValue: "",
+  });
 
-  useEffect(() => {
-    console.log("fetching advocates...");
-    fetch("/api/advocates").then((response) => {
-      response.json().then((jsonResponse) => {
-        setAdvocates(jsonResponse.data);
-        setFilteredAdvocates(jsonResponse.data);
+  const { data } = useQuery<AdvocatesQuery>({
+    queryKey: ["advocates", page, searchQuery],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        page: page.toString(),
+        ...(searchQuery && { query: searchQuery }),
       });
-    });
-  }, []);
 
-  const onChange = (e) => {
+      return fetch(`/api/advocates?${params.toString()}`).then((response) =>
+        response.json(),
+      );
+    },
+    placeholderData: keepPreviousData,
+  });
+
+  const advocates: AdvocatesQuery["data"] =
+    data?.data || ([] as AdvocatesQuery["data"]);
+  const pagination: AdvocatesQuery["pagination"] = data?.pagination || {
+    currentPage: 1,
+    pageSize: 0,
+    totalPages: 1,
+    totalCount: 0,
+    hasNextPage: false,
+    hasPreviousPage: false,
+  };
+
+  // local state to handle immediate input updates
+  const [inputValue, setInputValue] = useState(searchQuery);
+
+  // sync input value with searchQuery when searchQuery changes from URL
+  useEffect(() => {
+    setInputValue(searchQuery);
+  }, [searchQuery]);
+
+  // Create debounced function with useCallback to avoid recreating it
+  const debouncedSearchQuery = useCallback(
+    debounce((value: string) => {
+      setSearchQuery(value);
+      setPage(1);
+    }, 500),
+    [], // Empty dependency array since setSearchQuery and setPage should be stable
+  );
+
+  // Cleanup debounced function on unmount
+  useEffect(() => {
+    return () => {
+      debouncedSearchQuery.cancel();
+    };
+  }, [debouncedSearchQuery]);
+
+  const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const searchTerm = e.target.value;
 
-    document.getElementById("search-term").innerHTML = searchTerm;
+    // update local input value immediately
+    setInputValue(searchTerm);
 
-    console.log("filtering advocates...");
-    const filteredAdvocates = advocates.filter((advocate) => {
-      return (
-        advocate.firstName.includes(searchTerm) ||
-        advocate.lastName.includes(searchTerm) ||
-        advocate.city.includes(searchTerm) ||
-        advocate.degree.includes(searchTerm) ||
-        advocate.specialties.includes(searchTerm) ||
-        advocate.yearsOfExperience.includes(searchTerm)
-      );
-    });
-
-    setFilteredAdvocates(filteredAdvocates);
+    // debounce the search query update
+    debouncedSearchQuery(searchTerm);
   };
 
   const onClick = () => {
-    console.log(advocates);
-    setFilteredAdvocates(advocates);
+    debouncedSearchQuery.cancel(); // cancel any pending debounced calls
+
+    // reset both local and url state
+    setInputValue("");
+    setSearchQuery("");
+    setPage(1);
   };
 
   return (
-    <main style={{ margin: "24px" }}>
+    <main className="m-6 flex gap-4 flex-col">
       <h1>Solace Advocates</h1>
-      <br />
-      <br />
+
       <div>
-        <p>Search</p>
         <p>
-          Searching for: <span id="search-term"></span>
+          Searching for: <span id="search-term">{searchQuery}</span>
         </p>
-        <input style={{ border: "1px solid black" }} onChange={onChange} />
-        <button onClick={onClick}>Reset Search</button>
+        <div className="flex flex-row gap-4">
+          <Input
+            value={inputValue}
+            onChange={onChange}
+            placeholder="Search advocates..."
+          />
+          <Button onClick={onClick}>Reset Search</Button>
+        </div>
       </div>
-      <br />
-      <br />
-      <table>
-        <thead>
-          <th>First Name</th>
-          <th>Last Name</th>
-          <th>City</th>
-          <th>Degree</th>
-          <th>Specialties</th>
-          <th>Years of Experience</th>
-          <th>Phone Number</th>
-        </thead>
-        <tbody>
-          {filteredAdvocates.map((advocate) => {
-            return (
-              <tr>
-                <td>{advocate.firstName}</td>
-                <td>{advocate.lastName}</td>
-                <td>{advocate.city}</td>
-                <td>{advocate.degree}</td>
-                <td>
-                  {advocate.specialties.map((s) => (
-                    <div>{s}</div>
-                  ))}
-                </td>
-                <td>{advocate.yearsOfExperience}</td>
-                <td>{advocate.phoneNumber}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+
+      <DataTable columns={columns} data={advocates} />
+
+      <Pagination>
+        <PaginationContent>
+          <PaginationItem>
+            <PaginationPrevious
+              disabled={!pagination.hasPreviousPage}
+              onClick={() => setPage(page - 1)}
+            />
+          </PaginationItem>
+          {Array.from({ length: pagination.totalPages }, (_, idx) => (
+            <PaginationItem key={idx}>
+              <Button
+                className={`px-3 py-1 ${
+                  pagination.currentPage === idx + 1 ? "font-bold" : ""
+                }`}
+                size="default"
+                variant="ghost"
+                onClick={() => setPage(idx + 1)}
+              >
+                {idx + 1}
+              </Button>
+            </PaginationItem>
+          ))}
+          <PaginationItem>
+            <PaginationNext
+              disabled={!pagination.hasNextPage}
+              onClick={() => setPage(page + 1)}
+            />
+          </PaginationItem>
+        </PaginationContent>
+      </Pagination>
     </main>
   );
 }
