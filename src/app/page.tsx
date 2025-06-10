@@ -1,91 +1,125 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { DataTable } from "@/components/ui/data-table";
+import { columns, type Advocate } from "./columns";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
+import { parseAsInteger, useQueryState } from "nuqs";
+
+type AdvocatesQuery = {
+  data: Advocate[];
+  pagination: {
+    currentPage: number;
+    pageSize: number;
+    totalPages: number;
+    totalCount: number;
+    hasNextPage: boolean;
+    hasPreviousPage: boolean;
+  };
+};
 
 export default function Home() {
-  const [advocates, setAdvocates] = useState([]);
-  const [filteredAdvocates, setFilteredAdvocates] = useState([]);
+  // handle tracking our current page in search parameters
+  const [page, setPage] = useQueryState("page", parseAsInteger.withDefault(1));
+  const [searchQuery, setSearchQuery] = useQueryState("query", {
+    defaultValue: "",
+  });
 
-  useEffect(() => {
-    console.log("fetching advocates...");
-    fetch("/api/advocates").then((response) => {
-      response.json().then((jsonResponse) => {
-        setAdvocates(jsonResponse.data);
-        setFilteredAdvocates(jsonResponse.data);
-      });
-    });
-  }, []);
+  const { data, isPending, isError, error, isFetching, isPlaceholderData } =
+    useQuery<AdvocatesQuery>({
+      queryKey: ["advocates", page, searchQuery],
+      queryFn: async () => {
+        const params = new URLSearchParams({
+          page: page.toString(),
+          ...(searchQuery && { query: searchQuery }),
+        });
 
-  const onChange = (e) => {
-    const searchTerm = e.target.value;
-
-    document.getElementById("search-term").innerHTML = searchTerm;
-
-    console.log("filtering advocates...");
-    const filteredAdvocates = advocates.filter((advocate) => {
-      return (
-        advocate.firstName.includes(searchTerm) ||
-        advocate.lastName.includes(searchTerm) ||
-        advocate.city.includes(searchTerm) ||
-        advocate.degree.includes(searchTerm) ||
-        advocate.specialties.includes(searchTerm) ||
-        advocate.yearsOfExperience.includes(searchTerm)
-      );
+        return fetch(`/api/advocates?${params.toString()}`).then((response) =>
+          response.json(),
+        );
+      },
+      placeholderData: keepPreviousData,
     });
 
-    setFilteredAdvocates(filteredAdvocates);
+  const advocates: AdvocatesQuery["data"] =
+    data?.data || ([] as AdvocatesQuery["data"]);
+  const pagination: AdvocatesQuery["pagination"] = data?.pagination || {
+    currentPage: 1,
+    pageSize: 0,
+    totalPages: 1,
+    totalCount: 0,
+    hasNextPage: false,
+    hasPreviousPage: false,
+  };
+
+  const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const searchTerm = e.target.value.toLowerCase();
+
+    setSearchQuery(searchTerm);
+
+    // we want to reset the offset when handling a new query
+    // otherwise, the query might return no data since an offset could be applied
+    if (page > 1) setPage(1);
   };
 
   const onClick = () => {
-    console.log(advocates);
-    setFilteredAdvocates(advocates);
+    setSearchQuery("");
   };
 
   return (
-    <main style={{ margin: "24px" }}>
+    <main className="m-6 flex gap-4 flex-col">
       <h1>Solace Advocates</h1>
-      <br />
-      <br />
+
       <div>
-        <p>Search</p>
         <p>
-          Searching for: <span id="search-term"></span>
+          Searching for: <span id="search-term">{searchQuery}</span>
         </p>
-        <input style={{ border: "1px solid black" }} onChange={onChange} />
-        <button onClick={onClick}>Reset Search</button>
+        <div className="flex flex-row gap-4">
+          <Input value={searchQuery} onChange={onChange} />
+          <Button onClick={onClick}>Reset Search</Button>
+        </div>
       </div>
-      <br />
-      <br />
-      <table>
-        <thead>
-          <th>First Name</th>
-          <th>Last Name</th>
-          <th>City</th>
-          <th>Degree</th>
-          <th>Specialties</th>
-          <th>Years of Experience</th>
-          <th>Phone Number</th>
-        </thead>
-        <tbody>
-          {filteredAdvocates.map((advocate) => {
-            return (
-              <tr>
-                <td>{advocate.firstName}</td>
-                <td>{advocate.lastName}</td>
-                <td>{advocate.city}</td>
-                <td>{advocate.degree}</td>
-                <td>
-                  {advocate.specialties.map((s) => (
-                    <div>{s}</div>
-                  ))}
-                </td>
-                <td>{advocate.yearsOfExperience}</td>
-                <td>{advocate.phoneNumber}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+
+      <DataTable columns={columns} data={advocates} />
+      <Pagination>
+        <PaginationContent>
+          <PaginationItem>
+            <PaginationPrevious
+              disabled={!pagination.hasPreviousPage}
+              onClick={() => setPage(page - 1)}
+            />
+          </PaginationItem>
+          {Array.from({ length: pagination.totalPages }, (_, idx) => (
+            <PaginationItem key={idx}>
+              <Button
+                className={`px-3 py-1 ${
+                  pagination.currentPage === idx + 1 ? "font-bold" : ""
+                }`}
+                size="default"
+                variant="ghost"
+                onClick={() => setPage(idx + 1)}
+              >
+                {idx + 1}
+              </Button>
+            </PaginationItem>
+          ))}
+          <PaginationItem>
+            <PaginationNext
+              disabled={!pagination.hasNextPage}
+              onClick={() => setPage(page + 1)}
+            />
+          </PaginationItem>
+        </PaginationContent>
+      </Pagination>
     </main>
   );
 }
